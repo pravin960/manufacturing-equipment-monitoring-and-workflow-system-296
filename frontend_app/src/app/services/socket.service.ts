@@ -15,10 +15,16 @@ export class SocketService {
     /**
      * Returns a connected Socket.IO client instance (singleton).
      * Adds debug logging for connect/disconnect/errors.
+     *
+     * Authoritative requirement: `io(API_BASE)` where `API_BASE` is absolute and
+     * rewrites `kavia.app` -> `backend.kavia.app` when running in production browser.
      */
     if (this.socket) return this.socket;
 
     const baseUrl = getApiBaseUrl();
+
+    // Extra explicit log to help validate Socket.IO uses the same API_BASE as REST.
+    console.log('[socket.io] API BASE:', baseUrl);
 
     // Socket.IO expects the server origin/base (no path).
     this.socket = io(baseUrl, {

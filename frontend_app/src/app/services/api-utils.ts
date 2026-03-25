@@ -3,26 +3,56 @@ import { environment } from '../../environments/environment';
 
 /**
  * Centralized REST API utilities:
- * - base URL resolution (env-driven)
+ * - base URL resolution (authoritative API_BASE)
  * - url joining
  * - error -> user-friendly message mapping
+ *
+ * Authoritative requirements (user_input_ref):
+ * - Use an absolute API base (no relative "/alerts").
+ * - In production, derive from the current origin and rewrite:
+ *     kavia.app -> backend.kavia.app
+ * - Apply across REST and Socket.IO
+ * - Add console logging for API base
+ * - Ensure UI shows "Could not load alerts" on failure (handled at component level)
  */
 
 // PUBLIC_INTERFACE
 export function getApiBaseUrl(): string {
   /**
-   * Returns the configured API base URL from the environment.
-   * Ensures no trailing slash so `${base}/path` is predictable.
+   * Returns the absolute backend API base URL.
+   *
+   * Priority:
+   * 1) Browser runtime: window.location.origin with `kavia.app` -> `backend.kavia.app` rewrite
+   * 2) Env configuration (SSR/prerender safe): environment.apiBaseUrl / environment.backendUrl
+   *
+   * Always trims trailing slashes for predictable `${base}/path` joining.
    */
-  const raw = (environment as any).apiBaseUrl || (environment as any).backendUrl || '';
-  return String(raw).replace(/\/+$/, '');
+  const browserOrigin = (globalThis as any)?.location?.origin as string | undefined;
+
+  // Authoritative requirement: compute API_BASE from current origin and rewrite domain.
+  const derivedFromBrowser =
+    browserOrigin && browserOrigin.includes('kavia.app')
+      ? browserOrigin.replace('kavia.app', 'backend.kavia.app')
+      : browserOrigin;
+
+  // SSR/prerender safe fallback (no window available): use configured environment values.
+  const envFallback = (environment as any).apiBaseUrl || (environment as any).backendUrl || '';
+
+  const raw = derivedFromBrowser || envFallback || '';
+  const normalized = String(raw).replace(/\/+$/, '');
+
+  // Required logging (kept lightweight but explicit).
+  // Note: This can run multiple times; acceptable for troubleshooting production routing.
+  console.log('API BASE:', normalized);
+
+  return normalized;
 }
 
 // PUBLIC_INTERFACE
 export function apiUrl(path: string): string {
   /**
    * Create an absolute API URL for a given path.
-   * Accepts '/alerts' or 'alerts' and normalizes to `${base}/alerts`.
+   * Accepts '/alerts' or 'alerts' and normalizes to `${API_BASE}/alerts`.
    */
   const base = getApiBaseUrl();
   const normalizedPath = String(path || '').startsWith('/') ? String(path) : `/${path}`;
