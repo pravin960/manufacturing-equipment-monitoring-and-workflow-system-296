@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { CommonModule, DatePipe } from '@angular/common';
+import { CommonModule, DatePipe, isPlatformBrowser } from '@angular/common';
+import { PLATFORM_ID, inject } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { AlertsApiService, AlertDto } from './services/alerts-api.service';
 import { NewAlertEventPayload, RealtimeAlertsService } from './services/realtime-alerts.service';
@@ -25,20 +26,42 @@ export class AppComponent implements OnInit, OnDestroy {
   alerts: DashboardAlert[] = [];
   private sub: Subscription | null = null;
 
+  private readonly platformId = inject(PLATFORM_ID);
+
   constructor(
     private readonly alertsApi: AlertsApiService,
     private readonly realtime: RealtimeAlertsService
   ) {}
 
   async ngOnInit(): Promise<void> {
-    // Load stored alerts first (requirement #4)
-    const stored = await this.alertsApi.listAlerts({ limit: 200, offset: 0 });
-    this.alerts = stored.map((a) => this.mapStoredAlert(a));
+    // IMPORTANT: Angular app is configured with SSR + prerender.
+    // During prerender we must NOT attempt network calls or open sockets,
+    // otherwise the build can hang/time out.
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
 
-    // Subscribe to real-time events (requirement #3)
+    // Initial load via REST: GET /alerts
+    try {
+      console.log('[ui] loading initial alerts via GET /alerts');
+      const stored = await this.alertsApi.listAlerts({ limit: 200, offset: 0 });
+      const mapped = stored.map((a) => this.mapStoredAlert(a));
+
+      // De-dup within initial dataset (defensive)
+      this.alerts = this.dedupAndSortNewestFirst(mapped).slice(0, 200);
+      console.log('[ui] initial alerts loaded:', this.alerts.length);
+    } catch (err) {
+      console.error('[ui] failed to load initial alerts', err);
+      this.alerts = [];
+    }
+
+    // Subscribe to real-time events
     this.sub = this.realtime.onNewAlert().subscribe((payload) => {
       console.log('[ui] new_alert received:', payload);
-      this.alerts = [this.mapRealtimeAlert(payload), ...this.alerts].slice(0, 200);
+
+      const incoming = this.mapRealtimeAlert(payload);
+      // De-dup against current list
+      this.alerts = this.dedupAndSortNewestFirst([incoming, ...this.alerts]).slice(0, 200);
     });
   }
 
@@ -82,5 +105,33 @@ export class AppComponent implements OnInit, OnDestroy {
       priority: p.priority,
       timestamp: p.timestamp,
     };
+  }
+
+  private alertKey(a: DashboardAlert): string {
+    // Use a stable key to prevent duplicates when the same alert arrives via REST + Socket
+    // or socket reconnect replays similar payloads.
+    return [
+      a.machineId,
+      a.parameter,
+      a.priority,
+      a.currentValue,
+      a.thresholdValue,
+      new Date(a.timestamp).getTime(),
+    ].join('|');
+  }
+
+  private dedupAndSortNewestFirst(list: DashboardAlert[]): DashboardAlert[] {
+    const seen = new Set<string>();
+    const unique: DashboardAlert[] = [];
+    for (const a of list) {
+      const key = this.alertKey(a);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push(a);
+    }
+
+    // Ensure newest first consistently
+    unique.sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime());
+    return unique;
   }
 }
