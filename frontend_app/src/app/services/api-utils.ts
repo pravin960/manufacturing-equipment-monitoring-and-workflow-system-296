@@ -22,18 +22,41 @@ export function getApiBaseUrl(): string {
    * Returns the absolute backend API base URL.
    *
    * Priority:
-   * 1) Browser runtime: window.location.origin with `kavia.app` -> `backend.kavia.app` rewrite
+   * 1) Browser runtime: derive from window.location.origin with:
+   *    - preview/dev port mapping: :3000 -> :3001
+   *    - production domain mapping: kavia.app -> backend.kavia.app
    * 2) Env configuration (SSR/prerender safe): environment.apiBaseUrl / environment.backendUrl
    *
    * Always trims trailing slashes for predictable `${base}/path` joining.
    */
   const browserOrigin = (globalThis as any)?.location?.origin as string | undefined;
 
-  // Authoritative requirement: compute API_BASE from current origin and rewrite domain.
-  const derivedFromBrowser =
-    browserOrigin && browserOrigin.includes('kavia.app')
-      ? browserOrigin.replace('kavia.app', 'backend.kavia.app')
-      : browserOrigin;
+  const derivedFromBrowser = (() => {
+    if (!browserOrigin) return undefined;
+
+    // Use URL parsing for robust port rewriting without string edge cases.
+    // Example: https://host:3000 -> https://host:3001
+    try {
+      const url = new (globalThis as any).URL(browserOrigin);
+
+      // Preview requirement: when frontend runs on 3000, backend is on 3001.
+      if (url.port === '3000') {
+        url.port = '3001';
+      }
+
+      // Production requirement: rewrite domain (frontend) -> (backend)
+      // Keep behavior consistent even if served behind different subdomains.
+      url.hostname = url.hostname.replace('kavia.app', 'backend.kavia.app');
+
+      return url.origin;
+    } catch {
+      // Fallback to previous string-based behavior if URL parsing fails.
+      const portMapped = browserOrigin.replace(':3000', ':3001');
+      return portMapped.includes('kavia.app')
+        ? portMapped.replace('kavia.app', 'backend.kavia.app')
+        : portMapped;
+    }
+  })();
 
   // SSR/prerender safe fallback (no window available): use configured environment values.
   const envFallback = (environment as any).apiBaseUrl || (environment as any).backendUrl || '';
@@ -42,7 +65,7 @@ export function getApiBaseUrl(): string {
   const normalized = String(raw).replace(/\/+$/, '');
 
   // Required logging (kept lightweight but explicit).
-  // Note: This can run multiple times; acceptable for troubleshooting production routing.
+  // Note: This can run multiple times; acceptable for troubleshooting routing.
   console.log('API BASE:', normalized);
 
   return normalized;
