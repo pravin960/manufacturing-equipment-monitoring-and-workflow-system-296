@@ -1,54 +1,153 @@
 <div class="page">
+  <!-- Toasts (top-right) -->
+  <div class="toast-host" aria-live="polite" aria-relevant="additions removals">
+    <div
+      class="toast"
+      *ngFor="let t of toasts; trackBy: trackByIndex"
+      [class.toast-critical]="t.tone === 'critical'"
+      [class.toast-high]="t.tone === 'high'"
+      [class.toast-medium]="t.tone === 'medium'"
+      role="status"
+    >
+      <div class="toast-top">
+        <div class="toast-title">{{ t.title }}</div>
+        <button class="toast-close" type="button" (click)="dismissToast(t.id)" aria-label="Dismiss toast">
+          ✕
+        </button>
+      </div>
+      <div class="toast-message">{{ t.message }}</div>
+    </div>
+  </div>
+
   <header class="header">
     <div>
       <h1 class="title">{{ title }}</h1>
-      <p class="subtitle">Live threshold breaches pushed via Socket.IO event <code>new_alert</code></p>
+      <p class="subtitle">
+        Live threshold breaches pushed via Socket.IO event <code>new_alert</code> • REST bootstrap via <code>GET /alerts</code>
+      </p>
     </div>
 
     <div class="meta">
       <div class="meta-item">
-        <span class="meta-label">Total (shown)</span>
-        <span class="meta-value">{{ alerts.length }}</span>
+        <span class="meta-label">Connection</span>
+        <span class="meta-value meta-value-small">Realtime</span>
       </div>
     </div>
   </header>
 
-  <section class="card">
-    <div class="card-header">
-      <h2 class="card-title">Recent Alerts</h2>
-      <p class="card-hint">Newest first. Updates in real time.</p>
-    </div>
-
-    <div class="table-wrap" *ngIf="alerts.length; else empty">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Priority</th>
-            <th>Machine</th>
-            <th>Parameter</th>
-            <th class="num">Current</th>
-            <th class="num">Threshold</th>
-            <th>Timestamp</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr *ngFor="let a of alerts; trackBy: trackByIndex">
-            <td><span [class]="badgeClass(a.priority)">{{ a.priority }}</span></td>
-            <td>#{{ a.machineId }}</td>
-            <td>{{ a.parameter }}</td>
-            <td class="num">{{ a.currentValue }}</td>
-            <td class="num">{{ a.thresholdValue }}</td>
-            <td>{{ a.timestamp | date: 'medium' }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <ng-template #empty>
-      <div class="empty">
-        <div class="empty-title">No alerts yet</div>
-        <div class="empty-subtitle">Create a log that exceeds a threshold to see a real-time alert.</div>
+  <!-- KPI Summary cards -->
+  <section class="kpi-grid" aria-label="Dashboard summary">
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <div class="kpi-label">Total machines</div>
+        <div class="kpi-icon">🏭</div>
       </div>
-    </ng-template>
+      <div class="kpi-value">{{ kpiTotalMachines }}</div>
+      <div class="kpi-foot">Derived from alert stream</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <div class="kpi-label">Active alerts</div>
+        <div class="kpi-icon">🔔</div>
+      </div>
+      <div class="kpi-value">{{ kpiActiveAlerts }}</div>
+      <div class="kpi-foot">Latest 200 alerts shown</div>
+    </div>
+
+    <div class="kpi-card kpi-critical">
+      <div class="kpi-top">
+        <div class="kpi-label">Critical alerts</div>
+        <div class="kpi-icon">⛔</div>
+      </div>
+      <div class="kpi-value">{{ kpiCriticalAlerts }}</div>
+      <div class="kpi-foot">Immediate attention</div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-top">
+        <div class="kpi-label">Open work orders</div>
+        <div class="kpi-icon">🧾</div>
+      </div>
+      <div class="kpi-value">{{ kpiOpenWorkOrders }}</div>
+      <div class="kpi-foot">Demo metric (derived)</div>
+    </div>
+  </section>
+
+  <!-- Alerts -->
+  <section class="card">
+    <div class="card-header card-header-row">
+      <div>
+        <h2 class="card-title">Recent Alerts</h2>
+        <p class="card-hint">Newest first. Updates in real time.</p>
+      </div>
+
+      <div class="legend" aria-label="Priority legend">
+        <span class="legend-item"><span class="dot dot-critical"></span>Critical</span>
+        <span class="legend-item"><span class="dot dot-high"></span>High</span>
+        <span class="legend-item"><span class="dot dot-medium"></span>Medium</span>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div *ngIf="isLoading" class="state state-loading" aria-busy="true">
+      <div class="spinner" aria-hidden="true"></div>
+      <div>
+        <div class="state-title">Loading alerts…</div>
+        <div class="state-subtitle">Fetching the latest threshold breaches from the backend.</div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div *ngIf="!isLoading && loadError" class="state state-error" role="alert">
+      <div class="state-title">Could not load alerts</div>
+      <div class="state-subtitle">{{ loadError }}</div>
+    </div>
+
+    <!-- Empty -->
+    <div *ngIf="!isLoading && !loadError && !alerts.length" class="state state-empty">
+      <div class="state-title">No alerts currently</div>
+      <div class="state-subtitle">You're all clear. When a machine exceeds a threshold, it will appear here instantly.</div>
+    </div>
+
+    <!-- Cards list -->
+    <div *ngIf="!isLoading && !loadError && alerts.length" class="alerts-grid">
+      <article class="alert-card" *ngFor="let a of alerts; trackBy: trackByIndex">
+        <div class="alert-head">
+          <div class="alert-priority">
+            <span [class]="badgeClass(a.priority)">
+              <span class="badge-icon" aria-hidden="true">{{ priorityIcon(a.priority) }}</span>
+              {{ a.priority }}
+            </span>
+          </div>
+          <div class="alert-time">{{ a.timestamp | date: 'short' }}</div>
+        </div>
+
+        <div class="alert-body">
+          <div class="alert-machine">
+            <span class="pill">
+              <span class="pill-icon" aria-hidden="true">🧩</span>
+              Machine {{ a.machineId }}
+            </span>
+          </div>
+
+          <div class="alert-param">
+            <span class="param-icon" aria-hidden="true">{{ typeIcon(a.parameter) }}</span>
+            <span class="param-name">{{ a.parameter }}</span>
+          </div>
+
+          <div class="alert-metrics">
+            <div class="metric">
+              <div class="metric-label">Current</div>
+              <div class="metric-value">{{ a.currentValue }}</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Threshold</div>
+              <div class="metric-value">{{ a.thresholdValue }}</div>
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
   </section>
 </div>
