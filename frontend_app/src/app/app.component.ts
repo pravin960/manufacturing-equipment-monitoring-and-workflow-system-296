@@ -152,7 +152,9 @@ export class AppComponent implements OnInit, OnDestroy {
     } catch (err) {
       console.error('[ui] failed to load initial alerts', err);
       this.alerts = [];
-      this.loadError = 'Unable to load alerts right now.';
+
+      // Prefer the friendly Error message thrown by the API service; fall back to a generic message.
+      this.loadError = err instanceof Error ? err.message : 'Unable to load alerts right now.';
     } finally {
       this.isLoading = false;
       this.recomputeKpis();

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { environment } from '../../environments/environment';
+import { apiUrl, toUserFriendlyApiError } from './api-utils';
 
 export type AlertPriority = 'Critical' | 'High' | 'Medium';
 
@@ -28,8 +28,14 @@ export class AlertsApiService {
     if (opts?.limit !== undefined) params = params.set('limit', String(opts.limit));
     if (opts?.offset !== undefined) params = params.set('offset', String(opts.offset));
 
-    const url = `${environment.backendUrl}/alerts`;
-    const res = await firstValueFrom(this.http.get<{ data: AlertDto[] }>(url, { params }));
-    return res.data || [];
+    const url = apiUrl('/alerts');
+
+    try {
+      const res = await firstValueFrom(this.http.get<{ data: AlertDto[] }>(url, { params }));
+      return res.data || [];
+    } catch (err) {
+      // Re-throw a user-friendly error for components to display
+      throw new Error(toUserFriendlyApiError(err, 'Failed to load alerts'));
+    }
   }
 }
