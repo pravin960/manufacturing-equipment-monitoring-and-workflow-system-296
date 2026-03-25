@@ -1,3 +1,54 @@
-<div class="container">
-  <h1>{{ title }}</h1>
+<div class="page">
+  <header class="header">
+    <div>
+      <h1 class="title">{{ title }}</h1>
+      <p class="subtitle">Live threshold breaches pushed via Socket.IO event <code>new_alert</code></p>
+    </div>
+
+    <div class="meta">
+      <div class="meta-item">
+        <span class="meta-label">Total (shown)</span>
+        <span class="meta-value">{{ alerts.length }}</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">Recent Alerts</h2>
+      <p class="card-hint">Newest first. Updates in real time.</p>
+    </div>
+
+    <div class="table-wrap" *ngIf="alerts.length; else empty">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Priority</th>
+            <th>Machine</th>
+            <th>Parameter</th>
+            <th class="num">Current</th>
+            <th class="num">Threshold</th>
+            <th>Timestamp</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let a of alerts; trackBy: trackByIndex">
+            <td><span [class]="badgeClass(a.priority)">{{ a.priority }}</span></td>
+            <td>#{{ a.machineId }}</td>
+            <td>{{ a.parameter }}</td>
+            <td class="num">{{ a.currentValue }}</td>
+            <td class="num">{{ a.thresholdValue }}</td>
+            <td>{{ a.timestamp | date: 'medium' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <ng-template #empty>
+      <div class="empty">
+        <div class="empty-title">No alerts yet</div>
+        <div class="empty-subtitle">Create a log that exceeds a threshold to see a real-time alert.</div>
+      </div>
+    </ng-template>
+  </section>
 </div>
